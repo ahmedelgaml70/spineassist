@@ -1,0 +1,13 @@
+{
+  "name": "anatomy-ppt-3d-pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build:ppt": "node scripts/build_ppt.js",
+    "inspect": "node scripts/inspect_model_manifest.js"
+  },
+  "dependencies": {
+    "pptxgenjs": "^3.12.0"
+  }
+}
