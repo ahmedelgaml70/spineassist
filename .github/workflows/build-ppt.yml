@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -17,7 +17,7 @@ jobs:
       - name: Install system tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y blender ffmpeg
+          sudo apt-get install -y blender ffmpeg python3-numpy
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -30,13 +30,26 @@ jobs:
       - name: Download complete anatomy model
         run: bash scripts/download_model.sh
 
+      - name: Verify Blender can import NumPy
+        run: blender -b --python-expr "import numpy; print('Blender NumPy OK:', numpy.__version__)"
+
       - name: Render motion clips from complete model
-        run: blender -b --python scripts/render_motion_blender.py
+        run: |
+          set -euo pipefail
+          blender -b --python scripts/render_motion_blender.py
+          test -f outputs/shoulder_flexion_from_complete_model.mp4
+          test -f outputs/shoulder_abduction_from_complete_model.mp4
+          test -f outputs/shoulder_flexion_from_complete_model_poster.png
+          test -f outputs/shoulder_abduction_from_complete_model_poster.png
 
       - name: Build PPTX
-        run: node scripts/build_ppt.js
+        run: |
+          set -euo pipefail
+          node scripts/build_ppt.js
+          test -f outputs/anatomy_motion_pilot.pptx
 
       - name: Upload outputs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: anatomy-motion-pilot
