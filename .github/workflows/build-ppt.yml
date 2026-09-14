@@ -44,7 +44,7 @@ jobs:
       - name: Render motion clips from complete model
         run: |
           set -euo pipefail
-          ./blender-dist/blender -b --python scripts/render_motion_blender_fixed.py
+          ./blender-dist/blender -b --python scripts/render_motion_blender_clean.py
           test -f outputs/shoulder_flexion_from_complete_model.mp4
           test -f outputs/shoulder_abduction_from_complete_model.mp4
           test -f outputs/shoulder_flexion_from_complete_model_poster.png
