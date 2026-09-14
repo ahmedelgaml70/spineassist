@@ -1,0 +1,7 @@
+node_modules/
+assets/body.glb
+outputs/*.mp4
+outputs/*.png
+outputs/*.pptx
+outputs/model_manifest.json
+.DS_Store
