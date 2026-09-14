@@ -44,11 +44,12 @@ jobs:
       - name: Render motion clips from complete model
         run: |
           set -euo pipefail
-          ./blender-dist/blender -b --python scripts/render_motion_blender.py
+          ./blender-dist/blender -b --python scripts/render_motion_blender_fixed.py
           test -f outputs/shoulder_flexion_from_complete_model.mp4
           test -f outputs/shoulder_abduction_from_complete_model.mp4
           test -f outputs/shoulder_flexion_from_complete_model_poster.png
           test -f outputs/shoulder_abduction_from_complete_model_poster.png
+          node -e 'const m=require("./outputs/model_manifest.json"); if(!m.pipeline_qa?.hierarchy_contact_preserved) throw new Error("shoulder hierarchy/contact QA missing or failed"); console.log(JSON.stringify(m.pipeline_qa,null,2))'
 
       - name: Build PPTX
         run: |
