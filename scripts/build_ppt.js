@@ -8,7 +8,8 @@ const requiredMedia = [
   "shoulder_flexion_from_complete_model.mp4",
   "shoulder_abduction_from_complete_model.mp4",
   "shoulder_flexion_from_complete_model_poster.png",
-  "shoulder_abduction_from_complete_model_poster.png"
+  "shoulder_abduction_from_complete_model_poster.png",
+  "model_manifest.json"
 ];
 for (const file of requiredMedia) {
   if (!fs.existsSync(path.join(outDir, file))) {
@@ -16,11 +17,14 @@ for (const file of requiredMedia) {
   }
 }
 
+const manifest = JSON.parse(fs.readFileSync(path.join(outDir, "model_manifest.json"), "utf8"));
+
 const ppt = new pptxgen();
 ppt.layout = "LAYOUT_WIDE";
 ppt.author = "Anatomy PPT 3D Pipeline";
 ppt.subject = "3D anatomy motion teaching pilot";
-ppt.title = "3D Anatomy Motion Pilot";
+ppt.title = "Shoulder Motion From Complete Anatomy Model";
+ppt.company = "Generated from complete GLB anatomy mesh";
 
 ppt.theme = {
   headFontFace: "Aptos Display",
@@ -30,113 +34,147 @@ ppt.theme = {
 
 const C = {
   bg: "F7F3EA",
+  cream: "FBF8F1",
   navy: "17304F",
   text: "263647",
   muted: "6B7785",
   blue: "1C64D8",
   coral: "F16D4B",
   teal: "25A69A",
+  line: "E9DED0",
   white: "FFFFFF"
 };
 
-function addTop(slide, title, subtitle) {
+function footer(slide) {
+  slide.addText("3D mesh source: complete body.glb anatomy model; derived output requires BodyParts3D/Z-Anatomy attribution in final distribution.", {
+    x: 0.45, y: 7.05, w: 12.4, h: 0.18,
+    fontSize: 7.5, color: C.muted, margin: 0
+  });
+}
+
+function titleSlide() {
+  const slide = ppt.addSlide();
+  slide.background = { color: C.bg };
+  slide.addText("Shoulder motion", {
+    x: 0.65, y: 1.0, w: 11.8, h: 0.7,
+    fontFace: "Aptos Display", fontSize: 38, bold: true, color: C.navy, margin: 0
+  });
+  slide.addText("Pilot generated from a complete 3D anatomy model — not reused GIFs, not placeholders.", {
+    x: 0.68, y: 1.78, w: 10.8, h: 0.35,
+    fontSize: 18, color: C.text, margin: 0
+  });
+  slide.addShape(ppt.ShapeType.roundRect, {
+    x: 0.68, y: 2.55, w: 5.6, h: 1.15,
+    rectRadius: 0.12,
+    fill: { color: C.cream },
+    line: { color: C.line }
+  });
+  slide.addText("Quality standard", {
+    x: 0.95, y: 2.78, w: 2.4, h: 0.22,
+    fontSize: 13, bold: true, color: C.coral, margin: 0
+  });
+  slide.addText("Large motion first. Minimal text. Real mesh-derived movement. Critique before scaling to the full deck.", {
+    x: 0.95, y: 3.12, w: 4.95, h: 0.28,
+    fontSize: 14, color: C.text, margin: 0
+  });
+  slide.addShape(ppt.ShapeType.rect, { x: 7.25, y: 1.05, w: 4.75, h: 4.7, fill: { color: C.coral, transparency: 18 }, line: { color: C.coral, transparency: 100 } });
+  slide.addShape(ppt.ShapeType.arc, { x: 8.15, y: 1.75, w: 3.2, h: 2.2, adjustPoint: 0.35, line: { color: C.blue, width: 5, beginArrowType: "none", endArrowType: "triangle" } });
+  slide.addText("Pilot v2", { x: 8.15, y: 4.45, w: 3.1, h: 0.35, fontSize: 20, bold: true, color: C.navy, align: "center", margin: 0 });
+  footer(slide);
+}
+
+function addHeader(slide, title, subtitle) {
   slide.background = { color: C.bg };
   slide.addText(title, {
     x: 0.45, y: 0.28, w: 10.5, h: 0.48,
-    fontFace: "Aptos Display", fontSize: 25, bold: true, color: C.navy, margin: 0
+    fontFace: "Aptos Display", fontSize: 28, bold: true, color: C.navy, margin: 0
   });
   slide.addText(subtitle, {
-    x: 0.48, y: 0.80, w: 10.8, h: 0.32,
-    fontSize: 11.5, color: C.muted, margin: 0
+    x: 0.48, y: 0.84, w: 10.8, h: 0.32,
+    fontSize: 12.5, color: C.muted, margin: 0
   });
 }
 
 function addVideo(slide, baseName, x, y, w, h) {
   const mp4 = path.join(outDir, `${baseName}.mp4`);
   const poster = path.join(outDir, `${baseName}_poster.png`);
+  slide.addShape(ppt.ShapeType.roundRect, {
+    x: x - 0.08, y: y - 0.08, w: w + 0.16, h: h + 0.16,
+    rectRadius: 0.12,
+    fill: { color: C.cream },
+    line: { color: C.line }
+  });
   slide.addImage({ path: poster, x, y, w, h });
   slide.addMedia({ type: "video", path: mp4, x, y, w, h, poster });
 }
 
-function cue(slide, label, text, x, y, color) {
+function pill(slide, label, x, y, color) {
   slide.addShape(ppt.ShapeType.roundRect, {
-    x, y, w: 2.45, h: 0.54,
-    rectRadius: 0.1,
+    x, y, w: 2.65, h: 0.34,
+    rectRadius: 0.12,
     fill: { color },
-    line: { color },
+    line: { color }
   });
-  slide.addText(label, {
-    x: x + 0.12, y: y + 0.08, w: 2.2, h: 0.16,
-    fontSize: 11, bold: true, color: C.white, margin: 0
-  });
-  slide.addText(text, {
-    x: x + 0.12, y: y + 0.28, w: 2.2, h: 0.16,
-    fontSize: 8.5, color: C.white, margin: 0
-  });
+  slide.addText(label, { x, y: y + 0.08, w: 2.65, h: 0.12, fontSize: 9.5, bold: true, color: C.white, align: "center", margin: 0 });
 }
 
-function makeSlide(title, subtitle, baseName, movement, plane, cueText) {
+function movementSlide({title, subtitle, baseName, movement, plane, teachingCue, muscleCue}) {
   const slide = ppt.addSlide();
-  addTop(slide, title, subtitle);
-
-  slide.addShape(ppt.ShapeType.roundRect, {
-    x: 0.55, y: 1.25, w: 8.2, h: 5.55,
-    rectRadius: 0.12,
-    fill: { color: "FBF8F1" },
-    line: { color: "E9DED0", transparency: 10 }
-  });
-
-  addVideo(slide, baseName, 0.75, 1.45, 7.8, 5.05);
+  addHeader(slide, title, subtitle);
+  addVideo(slide, baseName, 0.7, 1.45, 7.95, 5.1);
 
   slide.addText(movement, {
-    x: 9.0, y: 1.32, w: 3.6, h: 0.55,
-    fontSize: 24, bold: true, color: C.navy, margin: 0
+    x: 9.0, y: 1.30, w: 3.7, h: 0.55,
+    fontSize: 27, bold: true, color: C.navy, margin: 0
   });
-
   slide.addText(plane, {
-    x: 9.0, y: 1.90, w: 3.45, h: 0.35,
-    fontSize: 13, bold: true, color: C.coral, margin: 0
+    x: 9.02, y: 1.93, w: 3.45, h: 0.28,
+    fontSize: 14, bold: true, color: C.coral, margin: 0
   });
-
-  slide.addText(cueText, {
-    x: 9.0, y: 2.55, w: 3.4, h: 1.2,
-    fontSize: 18, color: C.text,
-    fit: "shrink",
-    margin: 0.02
+  slide.addText(teachingCue, {
+    x: 9.0, y: 2.55, w: 3.45, h: 1.2,
+    fontSize: 19, color: C.text, fit: "shrink", margin: 0.02
   });
-
-  cue(slide, "Source", "complete anatomy GLB", 9.0, 4.25, C.blue);
-  cue(slide, "Motion", "rendered from mesh", 9.0, 4.92, C.teal);
-  cue(slide, "Design", "classroom scale", 9.0, 5.59, C.coral);
+  slide.addText(muscleCue, {
+    x: 9.0, y: 3.78, w: 3.45, h: 0.62,
+    fontSize: 13.5, color: C.muted, fit: "shrink", margin: 0.02
+  });
+  pill(slide, "real complete-model mesh", 9.0, 4.72, C.blue);
+  pill(slide, "humeral-head pivot", 9.0, 5.20, C.teal);
+  pill(slide, "poster + embedded MP4", 9.0, 5.68, C.coral);
+  footer(slide);
 }
 
-makeSlide(
-  "Shoulder flexion",
-  "Rendered from a complete anatomy model; structures are isolated only for motion.",
-  "shoulder_flexion_from_complete_model",
-  "Flexion",
-  "Sagittal plane",
-  "The arm moves anteriorly from anatomical position while the shoulder complex remains the reference."
-);
+titleSlide();
 
-makeSlide(
-  "Shoulder abduction",
-  "Same complete model source, different camera angle to clarify movement recognition.",
-  "shoulder_abduction_from_complete_model",
-  "Abduction",
-  "Frontal plane",
-  "The arm moves away from the trunk. Students should recognize the movement before reading the label."
-);
+movementSlide({
+  title: "Shoulder flexion",
+  subtitle: "Close-up shoulder-only pilot: scapula/clavicle remain reference; humerus is the moving mesh.",
+  baseName: "shoulder_flexion_from_complete_model",
+  movement: "Flexion",
+  plane: "Sagittal plane",
+  teachingCue: "The humerus moves anteriorly from anatomical position. Students should track the humeral head, not just the distal arm.",
+  muscleCue: "Primary contributors: anterior deltoid, clavicular pectoralis major, coracobrachialis, biceps brachii."
+});
 
-if (fs.existsSync(path.join(outDir, "ankle_dorsiflexion_from_complete_model.mp4")) && fs.existsSync(path.join(outDir, "ankle_dorsiflexion_from_complete_model_poster.png"))) {
-  makeSlide(
-    "Ankle dorsiflexion",
-    "Foot and leg structures are isolated from the complete model when named meshes are available.",
-    "ankle_dorsiflexion_from_complete_model",
-    "Dorsiflexion",
-    "Sagittal plane",
-    "The dorsum of the foot moves toward the anterior leg; the lateral camera clarifies the ankle angle."
-  );
-}
+movementSlide({
+  title: "Shoulder abduction",
+  subtitle: "Same matched shoulder meshes; camera changes so students see movement away from the trunk.",
+  baseName: "shoulder_abduction_from_complete_model",
+  movement: "Abduction",
+  plane: "Frontal plane",
+  teachingCue: "The humerus moves away from the body midline. The scapula/clavicle provide the fixed comparison reference.",
+  muscleCue: "Primary contributors: supraspinatus initiates; middle deltoid is dominant through most of the range."
+});
+
+const debug = manifest.selection_debug || {};
+const slide = ppt.addSlide();
+slide.background = { color: C.bg };
+slide.addText("Audit notes for this pilot", { x: 0.55, y: 0.55, w: 11.2, h: 0.45, fontSize: 28, bold: true, color: C.navy, margin: 0 });
+slide.addText(`Selected humerus: ${debug.selected_humerus || "unknown"}\nSelected scapula: ${debug.selected_scapula || "unknown"}\nSelected clavicle: ${debug.selected_clavicle || "unknown"}\nMesh contact distance: ${debug.mesh_contact_distance ?? "unknown"}\nNext critique: judge whether this shoulder-only render is visually teachable before adding elbow, wrist, ankle, and full deck styling.`, {
+  x: 0.75, y: 1.45, w: 11.2, h: 2.0,
+  fontSize: 18, color: C.text, breakLine: false, fit: "shrink", margin: 0.03
+});
+footer(slide);
 
 ppt.writeFile({ fileName: path.join(outDir, "anatomy_motion_pilot.pptx") });
