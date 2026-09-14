@@ -1,0 +1,47 @@
+name: Build anatomy PPT
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender ffmpeg
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Download complete anatomy model
+        run: bash scripts/download_model.sh
+
+      - name: Render motion clips from complete model
+        run: blender -b --python scripts/render_motion_blender.py
+
+      - name: Build PPTX
+        run: node scripts/build_ppt.js
+
+      - name: Upload outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: anatomy-motion-pilot
+          path: |
+            outputs/anatomy_motion_pilot.pptx
+            outputs/*.mp4
+            outputs/*.png
+            outputs/model_manifest.json
