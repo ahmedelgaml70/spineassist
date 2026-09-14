@@ -3,6 +3,19 @@ const fs = require("fs");
 const path = require("path");
 
 const outDir = path.join(__dirname, "..", "outputs");
+
+const requiredMedia = [
+  "shoulder_flexion_from_complete_model.mp4",
+  "shoulder_abduction_from_complete_model.mp4",
+  "shoulder_flexion_from_complete_model_poster.png",
+  "shoulder_abduction_from_complete_model_poster.png"
+];
+for (const file of requiredMedia) {
+  if (!fs.existsSync(path.join(outDir, file))) {
+    throw new Error(`Required 3D render output is missing: ${file}. Refusing to build placeholder deck.`);
+  }
+}
+
 const ppt = new pptxgen();
 ppt.layout = "LAYOUT_WIDE";
 ppt.author = "Anatomy PPT 3D Pipeline";
@@ -38,20 +51,11 @@ function addTop(slide, title, subtitle) {
   });
 }
 
-function addVideoOrPoster(slide, baseName, x, y, w, h) {
+function addVideo(slide, baseName, x, y, w, h) {
   const mp4 = path.join(outDir, `${baseName}.mp4`);
   const poster = path.join(outDir, `${baseName}_poster.png`);
-  if (fs.existsSync(poster)) {
-    slide.addImage({ path: poster, x, y, w, h });
-  }
-  if (fs.existsSync(mp4)) {
-    slide.addMedia({ type: "video", path: mp4, x, y, w, h, poster });
-  } else {
-    slide.addText("Motion clip missing. Run Blender render first.", {
-      x, y: y + h / 2 - 0.2, w, h: 0.4, fontSize: 16,
-      color: C.coral, align: "center"
-    });
-  }
+  slide.addImage({ path: poster, x, y, w, h });
+  slide.addMedia({ type: "video", path: mp4, x, y, w, h, poster });
 }
 
 function cue(slide, label, text, x, y, color) {
@@ -82,7 +86,7 @@ function makeSlide(title, subtitle, baseName, movement, plane, cueText) {
     line: { color: "E9DED0", transparency: 10 }
   });
 
-  addVideoOrPoster(slide, baseName, 0.75, 1.45, 7.8, 5.05);
+  addVideo(slide, baseName, 0.75, 1.45, 7.8, 5.05);
 
   slide.addText(movement, {
     x: 9.0, y: 1.32, w: 3.6, h: 0.55,
@@ -124,13 +128,15 @@ makeSlide(
   "The arm moves away from the trunk. Students should recognize the movement before reading the label."
 );
 
-makeSlide(
-  "Ankle dorsiflexion",
-  "Foot and leg structures are isolated from the complete model when named meshes are available.",
-  "ankle_dorsiflexion_from_complete_model",
-  "Dorsiflexion",
-  "Sagittal plane",
-  "The dorsum of the foot moves toward the anterior leg; the lateral camera clarifies the ankle angle."
-);
+if (fs.existsSync(path.join(outDir, "ankle_dorsiflexion_from_complete_model.mp4")) && fs.existsSync(path.join(outDir, "ankle_dorsiflexion_from_complete_model_poster.png"))) {
+  makeSlide(
+    "Ankle dorsiflexion",
+    "Foot and leg structures are isolated from the complete model when named meshes are available.",
+    "ankle_dorsiflexion_from_complete_model",
+    "Dorsiflexion",
+    "Sagittal plane",
+    "The dorsum of the foot moves toward the anterior leg; the lateral camera clarifies the ankle angle."
+  );
+}
 
 ppt.writeFile({ fileName: path.join(outDir, "anatomy_motion_pilot.pptx") });
