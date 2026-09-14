@@ -32,11 +32,9 @@ def exact_is_bone(obj, token):
 
 
 def duplicate_world_baked(obj, name):
-    """Detach a duplicate while preserving the imported mesh's evaluated world pose."""
     base.bpy.context.view_layer.update()
     source_center = base.object_center(obj)
     source_world = obj.matrix_world.copy()
-
     dup = obj.copy()
     dup.data = obj.data.copy()
     dup.name = name
@@ -47,7 +45,6 @@ def duplicate_world_baked(obj, name):
     dup.data.update()
     dup.matrix_world = Matrix.Identity(4)
     base.bpy.context.view_layer.update()
-
     baked_center = base.object_center(dup)
     shift = (baked_center - source_center).length
     qa_events["duplicates"].append({"object": dup.name, "source_to_baked_center_shift": shift})
@@ -58,7 +55,6 @@ def duplicate_world_baked(obj, name):
 
 
 def parent_baked_world_mesh(obj, parent):
-    """Attach a world-baked mesh to the GH pivot without changing its starting pose."""
     base.bpy.context.view_layer.update()
     before = base.object_center(obj)
     obj.parent = parent
@@ -73,7 +69,6 @@ def parent_baked_world_mesh(obj, parent):
 
 
 def fast_setup_render():
-    """Validation-quality Eevee render: sufficient to judge anatomy, cheap enough for CI."""
     scene = base.bpy.context.scene
     scene.frame_start = 1
     scene.frame_end = 36
@@ -92,7 +87,6 @@ def fast_setup_render():
             pass
     if hasattr(scene, "eevee"):
         scene.eevee.taa_render_samples = 16
-
     base.bpy.ops.object.light_add(type="AREA", location=(0, -3.5, 5))
     key = base.bpy.context.object
     key.data.energy = 650
@@ -103,18 +97,19 @@ def fast_setup_render():
     fill.data.size = 5
     qa_events["render_profile"] = {
         "purpose": "fast anatomical proof before polished rendering",
-        "resolution": [960, 600],
-        "fps": 18,
-        "frames": 36,
+        "resolution": [960, 600], "fps": 18, "frames": 36,
         "context": "matched scapula and clavicle only",
         "motion_scope": "isolated glenohumeral motion; scapula/clavicle held static"
     }
 
 
 def shoulder_only_context(objs, joint, chosen, radius):
-    # The previous nearby-radius search could pull dozens of meshes into every frame. For the
-    # validation pass we need an unambiguous GH relationship, not a costly miniature whole body.
     return list(dict.fromkeys(chosen))
+
+
+def contact_distance(obj_a, obj_b):
+    _, _, d = base.closest_pair(obj_a, obj_b)
+    return d
 
 
 def fast_render_clip(name, humerus_source, scapula, clavicle, context, joint, view, plane, rot_mid):
@@ -125,35 +120,47 @@ def fast_render_clip(name, humerus_source, scapula, clavicle, context, joint, vi
 
     mover = base.make_empty(name + "_motion_parent", joint)
     parent_baked_world_mesh(moving_humerus, mover)
-
     start, mid, end = 1, 18, 36
     base.key_rot(mover, start, (0, 0, 0))
     base.key_rot(mover, mid, rot_mid)
     base.key_rot(mover, end, (0, 0, 0))
 
-    arc = base.make_arc(name + "_arc", joint, base.object_extent(humerus_source) * 0.72, plane)
+    # Smaller arc stays inside the close-up frame instead of being clipped off-screen.
+    arc = base.make_arc(name + "_arc", joint, base.object_extent(humerus_source) * 0.43, plane)
     visible_meshes = [scapula, clavicle, moving_humerus]
     base.set_visibility(visible_meshes + [arc])
     base.camera_for(name, visible_meshes, joint, view)
 
-    # Hard geometry sanity check: rotation about the GH pivot must preserve each sampled
-    # humeral vertex's radius from that pivot. This catches another detached-transform failure.
     scene = base.bpy.context.scene
     scene.frame_set(start)
     start_radii = sorted((p - joint).length for p in base.sampled_vertices(moving_humerus, 500))
+    start_contact = contact_distance(moving_humerus, scapula)
     scene.frame_set(mid)
     mid_radii = sorted((p - joint).length for p in base.sampled_vertices(moving_humerus, 500))
+    mid_contact = contact_distance(moving_humerus, scapula)
     radius_error = max((abs(a - b) for a, b in zip(start_radii, mid_radii)), default=0.0)
+    extent = max(base.object_extent(humerus_source), 1e-6)
+    contact_drift = abs(mid_contact - start_contact)
+    contact_limit = max(0.004, extent * 0.04)
     qa_events.setdefault("pivot_radius", []).append({"clip": name, "max_radius_error": radius_error})
-    print(f"PIVOT_QA {name}: max sampled radial error={radius_error:.9f}")
+    qa_events.setdefault("gh_contact", []).append({
+        "clip": name,
+        "start_contact_distance": start_contact,
+        "mid_contact_distance": mid_contact,
+        "contact_distance_drift": contact_drift,
+        "allowed_drift": contact_limit
+    })
+    print(f"PIVOT_QA {name}: radial error={radius_error:.9f}")
+    print(f"CONTACT_QA {name}: start={start_contact:.6f} mid={mid_contact:.6f} drift={contact_drift:.6f} limit={contact_limit:.6f}")
     if radius_error > 1e-4:
         raise RuntimeError(f"{name} does not rotate rigidly around the GH pivot; error={radius_error:.9f}")
+    if contact_drift > contact_limit:
+        raise RuntimeError(f"{name} loses GH surface relationship during motion; drift={contact_drift:.6f}")
 
     scene.frame_set(mid)
     scene.render.image_settings.file_format = "PNG"
     scene.render.filepath = str(base.OUT / f"{name}_poster.png")
     base.bpy.ops.render.render(write_still=True)
-
     scene.render.image_settings.file_format = "FFMPEG"
     scene.render.ffmpeg.format = "MPEG4"
     scene.render.ffmpeg.codec = "H264"
@@ -180,23 +187,24 @@ manifest = json.loads(manifest_path.read_text())
 max_duplicate_shift = max((e["source_to_baked_center_shift"] for e in qa_events["duplicates"]), default=0.0)
 max_parent_shift = max((e["world_center_shift"] for e in qa_events["parenting"]), default=0.0)
 max_radius_error = max((e["max_radius_error"] for e in qa_events.get("pivot_radius", [])), default=0.0)
-passed = max_duplicate_shift <= 1e-5 and max_parent_shift <= 1e-5 and max_radius_error <= 1e-4
+max_contact_ratio = max((e["contact_distance_drift"] / e["allowed_drift"] for e in qa_events.get("gh_contact", []) if e["allowed_drift"]), default=0.0)
+passed = max_duplicate_shift <= 1e-5 and max_parent_shift <= 1e-5 and max_radius_error <= 1e-4 and max_contact_ratio <= 1.0
 manifest["pipeline_qa"] = {
-    "fix_version": "fast-world-baked-gh-proof-v4",
+    "fix_version": "fast-world-baked-gh-contact-proof-v5",
     "hierarchy_contact_preserved": passed,
     "max_source_to_baked_center_shift": max_duplicate_shift,
     "max_parenting_world_center_shift": max_parent_shift,
     "max_pivot_radius_error": max_radius_error,
+    "max_gh_contact_drift_ratio": max_contact_ratio,
     "events": qa_events,
     "bone_matching": "exact normalized token match",
     "motion_geometry": "world-baked detached humerus rotated around estimated GH pivot",
     "teaching_scope": "isolated glenohumeral flexion/abduction; not full shoulder-complex elevation"
 }
 manifest["selection_debug"]["corrective_change"] = (
-    "Keep the world-baked hierarchy fix, restrict validation rendering to the matched humerus/scapula/clavicle, "
-    "halve frame count and resolution, and add rigid-radius QA around the GH pivot."
+    "Preserve the world-baked hierarchy fix, add start-to-mid humerus/scapula contact-distance QA, "
+    "and reduce the motion-arc radius so the visual cue remains inside the close-up frame."
 )
 manifest_path.write_text(json.dumps(manifest, indent=2))
-
 if not passed:
-    raise RuntimeError("Fast shoulder transform/pivot QA failed")
+    raise RuntimeError("Fast shoulder transform/contact QA failed")
