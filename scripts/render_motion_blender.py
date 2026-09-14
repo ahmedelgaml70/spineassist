@@ -1,11 +1,11 @@
 """
-Blender script: render a cleaner shoulder-motion pilot from a complete anatomy GLB.
+Render shoulder-motion teaching clips from the complete anatomy GLB.
 
-Design decision after audit: the prior 3D output proved the pipeline works, but it was not
-teaching-quality because too many limb structures were animated with a crude pivot. This
-version narrows the pilot to the shoulder only, uses matched scapula/clavicle/humerus meshes
-from the complete model, estimates a humeral-head pivot from mesh contact, and renders larger,
-cleaner close-up motion clips.
+Audit fix: the previous successful build proved the GLB/Blender pipeline works, but the
+visual was not teaching-quality because it showed an isolated humerus plus a detached target
+position. This version keeps nearby torso/shoulder bones as faint context, highlights scapula
+and clavicle, animates only a duplicated humerus, removes the detached ghost, and adds a
+native 3D arc so the motion reads as a purposeful undergraduate teaching visual.
 """
 
 import bpy
@@ -21,9 +21,10 @@ OUT = ROOT / "outputs"
 OUT.mkdir(exist_ok=True)
 
 BG = (0.955, 0.945, 0.925)
-STATIC_BONE = (0.92, 0.86, 0.74, 1.0)
-MOVING_BONE = (0.98, 0.48, 0.28, 1.0)
-GHOST_BONE = (0.50, 0.70, 0.98, 0.22)
+CONTEXT_BONE = (0.82, 0.80, 0.75, 0.30)
+STATIC_BONE = (0.94, 0.86, 0.68, 0.98)
+MOVING_BONE = (1.0, 0.33, 0.18, 1.0)
+ARC_BLUE = (0.08, 0.34, 0.90, 1.0)
 
 BAD_NAME_PARTS = [
     "muscle", "artery", "vein", "nerve", "ligament", "tendon", "skin",
@@ -83,7 +84,15 @@ def object_center(obj):
     return (mn + mx) / 2
 
 
-def sampled_vertices(obj, max_count=650):
+def object_extent(obj):
+    pts = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+    mn = Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
+    mx = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
+    ext = mx - mn
+    return max(ext.x, ext.y, ext.z)
+
+
+def sampled_vertices(obj, max_count=700):
     total = max(1, len(obj.data.vertices))
     step = max(1, total // max_count)
     pts = [obj.matrix_world @ v.co for i, v in enumerate(obj.data.vertices) if i % step == 0]
@@ -116,8 +125,8 @@ def choose_shoulder(objs):
     for h in humeri:
         for s in scapulae:
             hp, sp, d = closest_pair(h, s)
-            side_bonus = 0.0 if side_hint(h) == side_hint(s) else 0.25
-            score = d + side_bonus
+            bonus = 0.0 if side_hint(h) == side_hint(s) else 0.18
+            score = d + bonus
             if best is None or score < best["score"]:
                 best = {"humerus": h, "scapula": s, "humerus_contact": hp, "scapula_contact": sp, "distance": d, "score": score}
 
@@ -129,34 +138,13 @@ def choose_shoulder(objs):
 
 
 def humeral_head_center(humerus, scapula_contact):
-    pts = sampled_vertices(humerus, max_count=2500)
+    pts = sampled_vertices(humerus, max_count=2600)
     ordered = sorted(pts, key=lambda p: (p - scapula_contact).length_squared)
-    n = max(18, min(90, len(ordered) // 18))
+    n = max(24, min(110, len(ordered) // 16))
     ctr = Vector((0, 0, 0))
     for p in ordered[:n]:
         ctr += p
     return ctr / n
-
-
-def duplicate_for_ghost(obj, name, mat_name, rgba):
-    dup = obj.copy()
-    dup.data = obj.data.copy()
-    dup.name = name
-    bpy.context.collection.objects.link(dup)
-    set_material(dup, mat_name, rgba)
-    return dup
-
-
-def bounds(objs):
-    pts = []
-    for o in objs:
-        for c in o.bound_box:
-            pts.append(o.matrix_world @ Vector(c))
-    if not pts:
-        raise RuntimeError("No bounds available")
-    mn = Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
-    mx = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
-    return mn, mx
 
 
 def set_material(obj, name, rgba):
@@ -167,9 +155,10 @@ def set_material(obj, name, rgba):
     if bsdf:
         bsdf.inputs["Base Color"].default_value = rgba
         bsdf.inputs["Alpha"].default_value = rgba[3]
-        bsdf.inputs["Roughness"].default_value = 0.55
+        bsdf.inputs["Roughness"].default_value = 0.52
         bsdf.inputs["Metallic"].default_value = 0.0
     mat.blend_method = "BLEND" if rgba[3] < 1.0 else "OPAQUE"
+    mat.show_transparent_back = True
     obj.data.materials.clear()
     obj.data.materials.append(mat)
 
@@ -177,16 +166,25 @@ def set_material(obj, name, rgba):
 def set_visibility(visible):
     visible = set(visible)
     for o in bpy.context.scene.objects:
-        if o.type == "MESH":
+        if o.type == "MESH" or o.type == "CURVE":
             o.hide_render = o not in visible
             o.hide_viewport = o not in visible
+
+
+def duplicate_mesh(obj, name):
+    dup = obj.copy()
+    dup.data = obj.data.copy()
+    dup.name = name
+    bpy.context.collection.objects.link(dup)
+    dup.matrix_world = obj.matrix_world.copy()
+    return dup
 
 
 def make_empty(name, loc):
     e = bpy.data.objects.new(name, None)
     bpy.context.collection.objects.link(e)
     e.empty_display_type = "SPHERE"
-    e.empty_display_size = 0.08
+    e.empty_display_size = 0.06
     e.location = loc
     return e
 
@@ -194,6 +192,19 @@ def make_empty(name, loc):
 def parent_to_empty(obj, parent):
     obj.parent = parent
     obj.matrix_parent_inverse = parent.matrix_world.inverted()
+
+
+def bounds(objs):
+    pts = []
+    for o in objs:
+        if o.type == "MESH":
+            for c in o.bound_box:
+                pts.append(o.matrix_world @ Vector(c))
+    if not pts:
+        raise RuntimeError("No bounds available")
+    mn = Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
+    mx = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
+    return mn, mx
 
 
 def look_at(obj, target):
@@ -214,29 +225,77 @@ def setup_render():
     if hasattr(scene, "eevee"):
         scene.eevee.taa_render_samples = 64
     bpy.ops.object.light_add(type="AREA", location=(0, -3.5, 5))
-    bpy.context.object.data.energy = 600
-    bpy.context.object.data.size = 5
+    key = bpy.context.object
+    key.data.energy = 700
+    key.data.size = 5
     bpy.ops.object.light_add(type="AREA", location=(3.5, 2.5, 4))
-    bpy.context.object.data.energy = 180
-    bpy.context.object.data.size = 5
+    fill = bpy.context.object
+    fill.data.energy = 220
+    fill.data.size = 5
 
 
-def camera_for(name, visible, view):
+def make_arc(name, joint, radius, plane):
+    curve = bpy.data.curves.new(name, type="CURVE")
+    curve.dimensions = "3D"
+    curve.resolution_u = 12
+    curve.bevel_depth = radius * 0.018
+    curve.bevel_resolution = 4
+    spl = curve.splines.new("POLY")
+    spl.points.add(47)
+    start = math.radians(7)
+    end = math.radians(50)
+    for i, p in enumerate(spl.points):
+        a = start + (end - start) * i / 47
+        if plane == "sagittal":
+            co = (joint.x, joint.y + radius * math.sin(a), joint.z - radius * math.cos(a), 1)
+        else:
+            co = (joint.x + radius * math.sin(a), joint.y, joint.z - radius * math.cos(a), 1)
+        p.co = co
+    obj = bpy.data.objects.new(name, curve)
+    bpy.context.collection.objects.link(obj)
+    mat = bpy.data.materials.get("Motion_Arc") or bpy.data.materials.new("Motion_Arc")
+    mat.diffuse_color = ARC_BLUE
+    curve.materials.append(mat)
+    return obj
+
+
+def nearby_context(objs, joint, chosen, radius):
+    chosen_set = set(chosen)
+    ctx = []
+    for o in objs:
+        if o in chosen_set:
+            continue
+        n = norm_name(o)
+        if any(bad in n for bad in BAD_NAME_PARTS):
+            continue
+        c = object_center(o)
+        if (c - joint).length <= radius:
+            ctx.append(o)
+    # Avoid losing the anatomic frame if the radius is too tight.
+    for o in chosen:
+        if o not in ctx:
+            ctx.append(o)
+    return ctx
+
+
+def camera_for(name, visible_meshes, joint, view):
     bpy.context.view_layer.update()
-    mn, mx = bounds(visible)
+    mn, mx = bounds(visible_meshes)
     ctr = (mn + mx) / 2
+    # Bias focus toward the joint rather than the distal humerus to avoid empty backgrounds.
+    focus = joint * 0.62 + ctr * 0.38
     ext = mx - mn
-    max_extent = max(ext.x, ext.y, ext.z, 1.0)
+    max_extent = max(ext.x, ext.y, ext.z, 0.35)
     if view == "lateral":
-        direction = Vector((1.0, -0.18, 0.10)).normalized()
+        direction = Vector((1.0, -0.15, 0.08)).normalized()
     else:
-        direction = Vector((0.05, -1.0, 0.10)).normalized()
-    bpy.ops.object.camera_add(location=ctr + direction * max_extent * 3.8)
+        direction = Vector((0.05, -1.0, 0.08)).normalized()
+    bpy.ops.object.camera_add(location=focus + direction * max_extent * 3.4)
     cam = bpy.context.object
     cam.name = "Camera_" + name
     cam.data.type = "ORTHO"
-    cam.data.ortho_scale = max_extent * 1.55
-    look_at(cam, ctr)
+    cam.data.ortho_scale = max_extent * 1.18
+    look_at(cam, focus)
     bpy.context.scene.camera = cam
 
 
@@ -246,28 +305,31 @@ def key_rot(obj, frame, rot):
     obj.keyframe_insert(data_path="rotation_euler", frame=frame)
 
 
-def render_clip(name, humerus, scapula, clavicle, joint, view, rot_mid):
-    # static ghost at the target angle gives students a destination cue without using pasted graphics
-    ghost_parent = make_empty(name + "_ghost_parent", joint)
-    ghost = duplicate_for_ghost(humerus, name + "_target_ghost", "Ghost_Bone", GHOST_BONE)
-    parent_to_empty(ghost, ghost_parent)
-    ghost_parent.rotation_euler = rot_mid
+def render_clip(name, humerus_source, scapula, clavicle, context, joint, view, plane, rot_mid):
+    moving_humerus = duplicate_mesh(humerus_source, name + "_moving_humerus")
+    set_material(moving_humerus, "Moving_Humerus", MOVING_BONE)
+    for o in context:
+        set_material(o, "Context_Bone", CONTEXT_BONE)
+    for o in [scapula, clavicle]:
+        set_material(o, "Static_Shoulder", STATIC_BONE)
 
     mover = make_empty(name + "_motion_parent", joint)
-    parent_to_empty(humerus, mover)
+    parent_to_empty(moving_humerus, mover)
     key_rot(mover, 1, (0, 0, 0))
     key_rot(mover, 36, rot_mid)
     key_rot(mover, 72, (0, 0, 0))
 
-    visible = [scapula, clavicle, humerus, ghost]
-    set_visibility(visible)
-    camera_for(name, visible, view)
+    arc = make_arc(name + "_arc", joint, object_extent(humerus_source) * 0.72, plane)
+    visible_meshes = [o for o in context if o is not humerus_source] + [moving_humerus]
+    set_visibility(visible_meshes + [arc])
+    camera_for(name, visible_meshes, joint, view)
 
     scene = bpy.context.scene
     scene.frame_set(36)
     scene.render.image_settings.file_format = "PNG"
     scene.render.filepath = str(OUT / f"{name}_poster.png")
     bpy.ops.render.render(write_still=True)
+
     scene.render.image_settings.file_format = "FFMPEG"
     scene.render.ffmpeg.format = "MPEG4"
     scene.render.ffmpeg.codec = "H264"
@@ -276,13 +338,9 @@ def render_clip(name, humerus, scapula, clavicle, joint, view, rot_mid):
     scene.render.filepath = str(OUT / f"{name}.mp4")
     bpy.ops.render.render(animation=True)
 
-    # Restore humerus for the next clip.
-    humerus.parent = None
-    humerus.matrix_world = humerus.matrix_world.copy()
-    mover.animation_data_clear()
+    bpy.data.objects.remove(moving_humerus, do_unlink=True)
     bpy.data.objects.remove(mover, do_unlink=True)
-    bpy.data.objects.remove(ghost, do_unlink=True)
-    bpy.data.objects.remove(ghost_parent, do_unlink=True)
+    bpy.data.objects.remove(arc, do_unlink=True)
 
 
 def write_manifest(objs, extra):
@@ -294,7 +352,7 @@ def write_manifest(objs, extra):
             "clavicle": len(find_bones(objs, "clavicle")),
         },
         "selection_debug": extra,
-        "quality_rule": "Shoulder pilot must use complete-model mesh geometry and must not reuse original GIFs or placeholder assets."
+        "quality_rule": "Uses complete body.glb mesh geometry; nearby shoulder/torso context is visible; no original GIFs, placeholders, or detached target ghost."
     }
     (OUT / "model_manifest.json").write_text(json.dumps(m, indent=2))
 
@@ -307,23 +365,22 @@ def main():
     humerus = selection["humerus"]
     scapula = selection["scapula"]
     clavicle = selection["clavicle"]
-
     joint = humeral_head_center(humerus, selection["scapula_contact"])
-    for o in [scapula, clavicle]:
-        set_material(o, "Static_Bone", STATIC_BONE)
-    set_material(humerus, "Moving_Humerus", MOVING_BONE)
+
+    radius = max(0.48, object_extent(humerus) * 1.05)
+    context = nearby_context(objs, joint, [scapula, clavicle], radius)
 
     render_clip(
         "shoulder_flexion_from_complete_model",
-        humerus, scapula, clavicle, joint,
-        "lateral",
-        (math.radians(58), 0, 0)
+        humerus, scapula, clavicle, context, joint,
+        "lateral", "sagittal",
+        (math.radians(42), 0, 0)
     )
     render_clip(
         "shoulder_abduction_from_complete_model",
-        humerus, scapula, clavicle, joint,
-        "front",
-        (0, math.radians(-58), 0)
+        humerus, scapula, clavicle, context, joint,
+        "front", "frontal",
+        (0, math.radians(-42), 0)
     )
 
     write_manifest(objs, {
@@ -334,7 +391,8 @@ def main():
         "scapula_side_hint": selection["side_scapula"],
         "mesh_contact_distance": selection["distance"],
         "estimated_humeral_head_center": [joint.x, joint.y, joint.z],
-        "audit_note": "This is intentionally a two-slide shoulder-only pilot; ankle and full-arm segments are deferred until the shoulder visual passes inspection."
+        "nearby_context_meshes": len(context),
+        "audit_note": "Revision removes the detached ghost render and adds shoulder/torso context so the moving humerus is no longer floating in empty space."
     })
 
 
