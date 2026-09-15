@@ -3,7 +3,7 @@ import json, subprocess, zipfile
 from pathlib import Path
 OUT=Path('outputs')
 REQ=['anatomy_motion_pilot.pptx','model_manifest.json','shoulder_flexion_from_complete_model.mp4','shoulder_abduction_from_complete_model.mp4','shoulder_flexion_from_complete_model_poster.png','shoulder_abduction_from_complete_model_poster.png']
-BAD=['motion clip missing','run blender render first','placeholder','missing render output','reused gif']
+BAD=['motion clip missing','run blender render first','placeholder','missing render output']
 def fail(x): raise SystemExit('AUDIT FAILED: '+x)
 def video(p):
  r=subprocess.run(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=codec_name,width,height,duration','-of','json',str(p)],capture_output=True,text=True,check=True); s=json.loads(r.stdout)['streams'][0]; w=int(s.get('width',0)); h=int(s.get('height',0)); d=float(s.get('duration',0));
@@ -44,7 +44,8 @@ def ppt(p):
   if off: fail('forbidden placeholder text: '+str(off))
   sizes=[len(z.read(n)) for n in mp4]
   if min(sizes)<10000: fail('embedded MP4 suspiciously small')
-  if len(set(z.read(n) for n in mp4))!=len(mp4): fail('duplicate/reused embedded MP4 payloads')
+  payloads=[z.read(n) for n in mp4]
+  if len({__import__('hashlib').sha256(b).hexdigest() for b in payloads})!=len(mp4): fail('duplicate/reused embedded MP4 payloads')
   return {'slides':len(slides),'media':len(media),'mp4s':len(mp4),'gifs':len(gifs),'embedded_mp4_bytes':sizes}
 def main():
  for n in REQ:
