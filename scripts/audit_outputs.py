@@ -27,8 +27,14 @@ def manifest(p):
  rule=(m.get('quality_rule') or '').lower();
  if 'body.glb' not in rule or 'no nearby context' not in rule: fail('strict complete-model visibility rule missing')
  qa=m.get('pipeline_qa') or {}; version=qa.get('fix_version','')
- if version!='full-excursion-framing-v10' or not qa.get('clean_renderer_executed'): fail(f'current full-excursion renderer execution not proven: {version}')
- if 'union of neutral and terminal' not in (qa.get('camera_rule') or '').lower(): fail('full-excursion camera rule missing')
+ if version!='projected-teaching-camera-v11' or not qa.get('clean_renderer_executed'): fail(f'current projected-camera renderer execution not proven: {version}')
+ camera=(qa.get('camera_rule') or '').lower()
+ if 'projected' not in camera or 'neutral+terminal' not in camera or 'aspect' not in camera: fail('projected full-excursion camera rule missing')
+ fits=(qa.get('events') or {}).get('camera_fit',[])
+ if len(fits)!=2: fail('expected projected camera-fit QA for both clips')
+ for x in fits:
+  fill=float(x.get('frame_fill_ratio',0))
+  if fill<.70 or fill>.90: fail(f'poor teaching-frame fill for {x.get("clip")}: {fill}')
  if qa.get('decorative_arc_created') is not False: fail('decorative arc must not be created')
  if not qa.get('hierarchy_contact_preserved'): fail('transform/contact QA did not pass')
  if len((qa.get('events') or {}).get('gh_contact',[]))!=2: fail('expected GH QA events for both clips')
@@ -55,5 +61,5 @@ def main():
  s={'manifest':manifest(OUT/'model_manifest.json'),'videos':{},'posters':{}}
  for n in REQ[2:4]: s['videos'][n]=video(OUT/n)
  for n in REQ[4:]: s['posters'][n]=png(OUT/n)
- s['pptx']=ppt(OUT/'anatomy_motion_pilot.pptx'); s['verdict']='PASS technical authenticity/full-excursion renderer/packaging gate; human visual teaching review still required.'; (OUT/'audit_summary.json').write_text(json.dumps(s,indent=2)); print(json.dumps(s,indent=2))
+ s['pptx']=ppt(OUT/'anatomy_motion_pilot.pptx'); s['verdict']='PASS technical authenticity/projected-camera/packaging gate; human visual teaching review still required.'; (OUT/'audit_summary.json').write_text(json.dumps(s,indent=2)); print(json.dumps(s,indent=2))
 if __name__=='__main__': main()
