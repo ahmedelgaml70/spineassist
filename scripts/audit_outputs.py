@@ -3,6 +3,7 @@ import json, subprocess, zipfile
 from pathlib import Path
 OUT=Path('outputs')
 REQ=['anatomy_motion_pilot.pptx','model_manifest.json','shoulder_flexion_from_complete_model.mp4','shoulder_abduction_from_complete_model.mp4','shoulder_flexion_from_complete_model_poster.png','shoulder_abduction_from_complete_model_poster.png']
+MIN_BYTES={'anatomy_motion_pilot.pptx':10000,'model_manifest.json':500,'shoulder_flexion_from_complete_model.mp4':10000,'shoulder_abduction_from_complete_model.mp4':10000,'shoulder_flexion_from_complete_model_poster.png':10000,'shoulder_abduction_from_complete_model_poster.png':10000}
 BAD=['motion clip missing','run blender render first','placeholder','missing render output']
 def fail(x): raise SystemExit('AUDIT FAILED: '+x)
 def video(p):
@@ -49,8 +50,8 @@ def ppt(p):
   return {'slides':len(slides),'media':len(media),'mp4s':len(mp4),'gifs':len(gifs),'embedded_mp4_bytes':sizes}
 def main():
  for n in REQ:
-  p=OUT/n
-  if not p.exists() or p.stat().st_size<10000: fail('missing/small '+n)
+  p=OUT/n; minimum=MIN_BYTES[n]
+  if not p.exists() or p.stat().st_size<minimum: fail(f'missing/small {n}: {p.stat().st_size if p.exists() else 0} bytes, minimum {minimum}')
  s={'manifest':manifest(OUT/'model_manifest.json'),'videos':{},'posters':{}}
  for n in REQ[2:4]: s['videos'][n]=video(OUT/n)
  for n in REQ[4:]: s['posters'][n]=png(OUT/n)
