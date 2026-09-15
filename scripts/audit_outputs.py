@@ -25,6 +25,11 @@ def manifest(p):
  if d>gh or dc>ac: fail(f'shoulder continuity failed: GH {d}/{gh}, AC {dc}/{ac}')
  rule=(m.get('quality_rule') or '').lower();
  if 'body.glb' not in rule or 'no nearby context' not in rule: fail('strict complete-model visibility rule missing')
+ qa=m.get('pipeline_qa') or {}
+ if qa.get('fix_version')!='clean-render-hook-v7' or not qa.get('clean_renderer_executed'): fail('clean renderer execution not proven')
+ if qa.get('decorative_arc_created') is not False: fail('decorative arc must not be created')
+ if len((qa.get('events') or {}).get('gh_contact',[]))!=2: fail('expected GH QA events for both clips')
+ if 'moving humerus' not in (q.get('visible_rule') or '').lower(): fail('strict visible-object rule missing')
  return m
 def ppt(p):
  with zipfile.ZipFile(p) as z:
@@ -32,7 +37,6 @@ def ppt(p):
   if len(slides)<4 or len(mp4)<2: fail(f'PPT package incomplete: slides={len(slides)}, mp4={len(mp4)}')
   text='\n'.join(z.read(n).decode('utf-8','ignore') for n in slides).lower(); off=[x for x in BAD if x in text]
   if off: fail('forbidden placeholder text: '+str(off))
-  # A genuine deck must embed the generated MP4s, not merely link external files.
   sizes=[len(z.read(n)) for n in mp4]
   if min(sizes)<10000: fail('embedded MP4 suspiciously small')
   return {'slides':len(slides),'media':len(media),'mp4s':len(mp4),'embedded_mp4_bytes':sizes}
@@ -43,5 +47,5 @@ def main():
  s={'manifest':manifest(OUT/'model_manifest.json'),'videos':{},'posters':{}}
  for n in REQ[2:4]: s['videos'][n]=video(OUT/n)
  for n in REQ[4:]: s['posters'][n]=png(OUT/n)
- s['pptx']=ppt(OUT/'anatomy_motion_pilot.pptx'); s['verdict']='PASS technical authenticity/packaging gate; human visual teaching review still required.'; (OUT/'audit_summary.json').write_text(json.dumps(s,indent=2)); print(json.dumps(s,indent=2))
+ s['pptx']=ppt(OUT/'anatomy_motion_pilot.pptx'); s['verdict']='PASS technical authenticity/clean-render routing/packaging gate; human visual teaching review still required.'; (OUT/'audit_summary.json').write_text(json.dumps(s,indent=2)); print(json.dumps(s,indent=2))
 if __name__=='__main__': main()
